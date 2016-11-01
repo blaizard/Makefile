@@ -1,6 +1,6 @@
 ## A versatile Makefile
 
-This Makefile can generate multiple target and support various languages. As of now CSS and Javascript are supported but any other can be easily added.
+This Makefile can generate multiple targets and support various languages. As of now CSS and Javascript are supported but any other can be easily added.
 
 All the configuration takes place in a separate <code>config.mk</code> to ensure easy migration to updates of this Makefile script.
 

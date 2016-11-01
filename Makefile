@@ -1,5 +1,11 @@
 # Generic Makefile, by Blaise Lengrand
 
+# Usefull predefined
+MINIFY_JS_FLAGS_HARDCORE := \
+	--compress sequences=true,dead_code=true,conditionals=true,booleans=true,unused=true,if_return=true,join_vars=true,drop_console=true \
+	--mangle toplevel=true,eval=true \
+	--lint -v
+
 -include config.mk
 
 # List all available targets (starting with 'target_*')
@@ -40,7 +46,7 @@ PACK_CMD := zip
 
 # Flags
 PRINT_FLAGS ?=
-MINIFY_JS_FLAGS ?= -c -m -v --lint
+MINIFY_JS_FLAGS ?= --compress --mangle -v --lint
 MINIFY_CSS_FLAGS ?=
 CONCAT_FLAGS ?=
 MKDIR_FLAGS ?= -p
@@ -97,7 +103,7 @@ $(AT)$(PACK_CMD) $(PACK_FLAGS) $2 $1 >/dev/null;
 endef
 define STAMP
 $(call MSG,STAMP,GREEN,$1);
-$(AT)echo "$2" > .temp && cat $1 >> .temp && mv .temp $1;
+$(AT)echo "$(strip $2)" > .temp && cat $1 >> .temp && mv .temp $1;
 endef
 
 # Check that given variables are set and all have non-empty values,
