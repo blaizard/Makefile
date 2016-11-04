@@ -16,7 +16,11 @@ MINIFY_JS_FLAGS_HARDCORE := \
 
 # List all available targets
 ALL_RULES := $(shell test -s config.mk && cat config.mk | grep -e '^process[-_]\|^copy[-_]\|^concat[-_]' |  awk -F':' '{print $$1}' | uniq)
+ifeq ("$(wildcard config.mk)","")
+ALL_MAKEFILES := Makefile
+else
 ALL_MAKEFILES := Makefile config.mk
+endif
 
 # Default values
 PACKAGE ?= package.zip
@@ -71,15 +75,15 @@ COMMA := ,
 # Useful commands
 define MINIFY_JS
 $(call MSG,MINJS,GREEN,$2);
-$(AT)$(MINIFY_JS_CMD) $(MINIFY_JS_FLAGS) $1 -o $2 2>&1 | $(call PIPE_FORMAT);
+$(AT)$(MINIFY_JS_CMD) $(MINIFY_JS_FLAGS) $1 -o $2 2>&1 | $(call PIPE_FORMAT)
 endef
 define MINIFY_CSS
 $(call MSG,MINCSS,GREEN,$2);
-$(AT)$(MINIFY_CSS_CMD) $(MINIFY_CSS_FLAGS) $1 > $2 2>&1 | $(call PIPE_FORMAT);
+$(AT)$(MINIFY_CSS_CMD) $(MINIFY_CSS_FLAGS) $1 > $2 2>&1 | $(call PIPE_FORMAT)
 endef
 define CONCAT
 $(call MSG,CONCAT,GREEN,$2);
-$(AT)$(CONCAT_CMD) $(CONCAT_FLAGS) $1 > $2;
+$(AT)$(CONCAT_CMD) $(CONCAT_FLAGS) $1 > $2
 endef
 define MKDIR
 $(if $(shell test -d $1 && echo 1),,$(call MSG,MKDIR,CYAN,$1);$(MKDIR_CMD) $(MKDIR_FLAGS) $1)
@@ -89,19 +93,19 @@ $(if $(shell test -d $1 && echo 1),$(call MSG,RMDIR,CYAN,$1);$(RMDIR_CMD) $(RMDI
 endef
 define COPY
 $(call MSG,COPY,CYAN,$1);
-$(AT)$(COPY_CMD) $(COPY_FLAGS) $1 $2;
+$(AT)$(COPY_CMD) $(COPY_FLAGS) $1 $2
 endef
 define PACK
 $(call MSG,PACK,CYAN,$2);
-$(AT)$(PACK_CMD) $(PACK_FLAGS) $2 $1 >/dev/null;
+$(AT)$(PACK_CMD) $(PACK_FLAGS) $2 $1 >/dev/null
 endef
 define STAMP
 $(call MSG,STAMP,GREEN,$1);
-$(AT)echo "$(strip $2)" > .temp && cat $1 >> .temp && mv .temp $1;
+$(AT)echo "$(strip $2)" > .temp && cat $1 >> .temp && mv .temp $1
 endef
 # Make calls
 define MAKE_RUN
-$(MAKE) --no-print-directory -s $2 $1
+$(MAKE) --no-print-directory $2 $1
 endef
 define MAKE_NEXT
 $(if $(RULES),$(call MAKE_RUN, __$(firstword $(RULES)), RULES="$(wordlist 2, 10, $(RULES))" $1),)
@@ -177,13 +181,19 @@ endef
 
 # ---- General targets --------------------------------------------------------
 
+# Export variables to sub-makes
+export
+unexport RULES
+
 # Predefined rules
-all: $(BUILDDIR)/Makefile | $(ALL_RULES)
+all: $(BUILDDIR)/Makefile | $(ALL_RULES) mute-if-nop
 build: all
 silent: VERBOSE := 0
 silent: all
 verbose: VERBOSE := 2
 verbose: all
+mute-if-nop:
+	@printf ""
 
 # Trigger a clean if the makefiles have been altered
 $(BUILDDIR)/Makefile: $(ALL_MAKEFILES) | check_config
@@ -244,7 +254,7 @@ check_srcs:
 check_output:
 	$(call CHECK_DEFINED, OUTPUT)
 # Clean-up the created directoried
-clean:
+clean: | mute-if-nop
 	$(call RMDIR,$(BUILDDIR)/)
 	$(call RMDIR,$(DISTDIR)/)
 
@@ -254,7 +264,7 @@ rebuild:
 	@$(call MAKE_RUN, build)
 
 # Re-build all what is inside the dist directory and make a package of it all
-release: check_pack
+release: check_pack | mute-if-nop
 	$(call RMDIR,$(DISTDIR)/)
 	@$(call MAKE_RUN, build)
 	$(call MKDIR, `dirname "$(DISTDIR)/$(PACKAGE)"`/)
@@ -274,7 +284,7 @@ ifeq ($(call IS_RULE, __stamp),)
 ifeq ($(words $(OUTPUT)),1)
 # Note, the target ensures that only 1 output is specified
 ifeq ($(filter-out %.js %.css,$(OUTPUT)),)
-__stamp: check_output
+__stamp: check_output | mute-if-nop
 	$(call STAMP,$(OUTPUT),/* $(STAMP_TXT) */)
 	@$(call MAKE_NEXT, OUTPUT="$(OUTPUT)")
 else
@@ -292,17 +302,13 @@ endif
 # ---- Process ----------------------------------------------------------------
 ifeq ($(call IS_RULE, __process),)
 
-__process: $(DISTDIR)/$(OUTPUT)
+__process: $(DISTDIR)/$(OUTPUT) | mute-if-nop
 
-# Contenate all the files together
-ifeq ($(filter-out %.js %.css,$(OUTPUT)),)
+# ---- Process - Javascript & CSS
+ifeq ($(filter-out %.js %.css,$(SRCS)),)
+
 $(DISTDIR)/$(OUTPUT): $(foreach file, $(filter %.js %.css,$(SRCS)), $(BUILDDIR)/$(basename $(file)).min$(suffix $(file)))
 	@$(call MAKE_NEXT_EXPLICIT, __concat, SRCS="$^" OUTPUT="$(OUTPUT)")
-else
-$(DISTDIR)/$(OUTPUT):
-	$(call ERROR, File type \"$(suffix $(OUTPUT))\" not supported for rule process)
-endif
-
 # js files
 $(BUILDDIR)/%.min.js: check_minify_js %.js
 	$(call MKDIR, `dirname $@`/)
@@ -312,12 +318,17 @@ $(BUILDDIR)/%.min.css: check_minify_css %.css
 	$(call MKDIR, `dirname $@`/)
 	$(call MINIFY_CSS, $(lastword $^), "$@")
 
+else
+$(DISTDIR)/$(OUTPUT):
+	$(call ERROR, File type \"$(firstword $(suffix $(SRCS)))\" not supported for rule processing)
+endif
+
 endif
 
 # ---- Concatenate ------------------------------------------------------------
 ifeq ($(call IS_RULE, __concat),)
 
-__concat: $(DISTDIR)/$(OUTPUT)
+__concat: $(DISTDIR)/$(OUTPUT) | mute-if-nop
 # Contenate all files together
 $(DISTDIR)/$(OUTPUT): $(SRCS)
 	$(call MKDIR, `dirname "$(DISTDIR)/$(OUTPUT)"`/)
@@ -331,14 +342,14 @@ ifeq ($(call IS_RULE, __copy),)
 
 ifeq ($(words $(SRCS)),1)
 # Note: this target ensures that only 1 src and 1 dst are specified
-DST := $(abspath $(patsubst %, $(DISTDIR)/$(OUTPUT)/%, $(notdir %$(patsubst %/,%,$(abspath $(SRCS))))))
-__copy: $(DST)
-$(DST):
+DIR_OUTPUT = $(abspath $(patsubst %, $(DISTDIR)/$(OUTPUT)/%, $(notdir %$(patsubst %/,%,$(abspath $(SRCS))))))
+FILES_OUTPUT=$(patsubst %, $(DIR_OUTPUT)/%, $(notdir $(shell find $(SRCS) -type f)))
+__copy: $(DIR_OUTPUT) | mute-if-nop
+$(DIR_OUTPUT):
 	$(call CHECK_DEFINED, SRCS)
 	$(call MKDIR, "$(DISTDIR)/$(OUTPUT)")
-	$(call COPY, $(SRCS), $(DST))
-	@find $(SRCS) -type f > /dev/null
-	@$(foreach file, $(shell find $(SRCS) -type f), $(call MAKE_NEXT, OUTPUT="$(file)") && ) true
+	$(call COPY, $(SRCS), $(DIR_OUTPUT))
+	@$(foreach file, $(FILES_OUTPUT), $(call MAKE_NEXT, OUTPUT="$(file)") && ) true
 # Hack to ensure that the find command is not executed before the copy (due to parallelism)
 else
 __copy:
