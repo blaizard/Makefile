@@ -15,7 +15,7 @@ MINIFY_JS_FLAGS_HARDCORE := \
 .PHONY: all silent verbose help build rebuild release
 
 # List all available targets
-ALL_RULES := $(shell test -s config.mk && cat config.mk | grep -e '^process_\|^process-stamp_\|^copy_\|^copy-stamp_' |  awk -F':' '{print $$1}' | uniq)
+ALL_RULES := $(shell test -s config.mk && cat config.mk | grep -e '^process[-_]\|^copy[-_]\|^concat[-_]' |  awk -F':' '{print $$1}' | uniq)
 ALL_MAKEFILES := Makefile config.mk
 
 # Default values
@@ -99,9 +99,18 @@ define STAMP
 $(call MSG,STAMP,GREEN,$1);
 $(AT)echo "$(strip $2)" > .temp && cat $1 >> .temp && mv .temp $1;
 endef
+# Make calls
 define MAKE_RUN
 $(MAKE) --no-print-directory -s $2 $1
 endef
+define MAKE_NEXT
+$(if $(RULES),$(call MAKE_RUN, __$(firstword $(RULES)), RULES="$(wordlist 2, 10, $(RULES))" $1),)
+endef
+define MAKE_NEXT_EXPLICIT
+$(call MAKE_RUN, $1, RULES="$(RULES)" $2)
+endef
+# List and decode the current rules
+RULES?=$(filter-out " ",$(strip $(subst -, ,$(firstword $(subst _, ,$@)))))
 # If a rule is present
 IS_RULE=$(if $(filter-out " ",$(strip $(foreach rule,$1,$(filter " $(rule) "," $(MAKECMDGOALS) ")))),,-1)
 # Check that given variables are set and all have non-empty values,
@@ -187,6 +196,8 @@ help:
 	@printf "\tprocess-stamp_*\t\tWill process and stamp the output file.\n"
 	@printf "\tcopy_*\t\tSimply copy the files or directories to the output.\n"
 	@printf "\tcopy-stamp_*\t\tCopy and stamp.\n"
+	@printf "\tconcat_*\t\tConcatenate a list of files together.\n"
+	@printf "\tconcat-stamp_*\t\tConcatenate and stamp a file.\n"
 	@printf "\n"
 	@printf "List of rules available:\n"
 	@printf "\tsilent\t\tNo verbosity, except error messages.\n"
@@ -242,15 +253,13 @@ release: check_pack
 	$(call MKDIR, `dirname "$(DISTDIR)/$(PACKAGE)"`/)
 	$(call PACK,$(DISTDIR)/*,$(DISTDIR)/$(PACKAGE))
 
-# ---- Automoatic targets -----------------------------------------------------
-process_%: check_srcs check_output
-	@$(call MAKE_RUN, __process, SRCS="$(SRCS)" OUTPUT="$(OUTPUT)")
-process-stamp_%: check_srcs check_output
-	@$(call MAKE_RUN, __process-stamp, SRCS="$(SRCS)" OUTPUT="$(OUTPUT)")
-copy_%: check_srcs
-	@$(foreach src, $(SRCS), $(call MAKE_RUN, __copy, SRCS="$(src)" OUTPUT="$(OUTPUT)") && ) true
-copy-stamp_%: check_srcs
-	@$(foreach src, $(SRCS), $(call MAKE_RUN, __copy-stamp, SRCS="$(src)" OUTPUT="$(OUTPUT)") && ) true
+# ---- Automatic targets -----------------------------------------------------
+process%: check_srcs check_output
+	$(call MAKE_NEXT, SRCS="$(SRCS)" OUTPUT="$(OUTPUT)")
+concat%: check_srcs check_output
+	$(call MAKE_NEXT, SRCS="$(SRCS)" OUTPUT="$(OUTPUT)")
+copy%: check_srcs
+	@$(foreach src, $(SRCS), $(call MAKE_NEXT, SRCS="$(src)" OUTPUT="$(OUTPUT)") && ) true
 
 # ---- Stamp ------------------------------------------------------------------
 ifeq ($(call IS_RULE, __stamp),)
@@ -260,6 +269,7 @@ ifeq ($(words $(OUTPUT)),1)
 ifeq ($(filter-out %.js %.css,$(OUTPUT)),)
 __stamp: check_output
 	$(call STAMP,$(OUTPUT),/* $(STAMP_TXT) */)
+	$(call MAKE_NEXT, OUTPUT="$(OUTPUT)")
 else
 __stamp:
 	$(call WARNING, The filetype \"$(suffix $(OUTPUT))\" of \"$(OUTPUT)\" is not supported for stamping)
@@ -273,22 +283,17 @@ endif
 endif
 
 # ---- Process ----------------------------------------------------------------
-ifeq ($(call IS_RULE, __process __process-stamp),)
+ifeq ($(call IS_RULE, __process),)
 
 __process: $(DISTDIR)/$(OUTPUT)
-__process-stamp: $(DISTDIR)/$(OUTPUT)
 
 # Contenate all the files together
 ifeq ($(filter-out %.js %.css,$(OUTPUT)),)
 $(DISTDIR)/$(OUTPUT): $(foreach file, $(filter %.js %.css,$(SRCS)), $(BUILDDIR)/$(basename $(file)).min$(suffix $(file)))
-	$(call MKDIR, `dirname "$(DISTDIR)/$(OUTPUT)"`/)
-	$(call CONCAT, $^, "$(DISTDIR)/$(OUTPUT)")
-ifeq ($(call IS_RULE, __process-stamp),)
-	@$(call MAKE_RUN, __stamp, OUTPUT="$(DISTDIR)/$(OUTPUT)")
-endif
+	$(call MAKE_NEXT_EXPLICIT, __concat, SRCS="$^" OUTPUT="$(OUTPUT)")
 else
 $(DISTDIR)/$(OUTPUT):
-	$(call ERROR, File type \"$(suffix $(OUTPUT))\" not supported for process)
+	$(call ERROR, File type \"$(suffix $(OUTPUT))\" not supported for rule process)
 endif
 
 # js files
@@ -302,23 +307,32 @@ $(BUILDDIR)/%.min.css: check_minify_css %.css
 
 endif
 
+# ---- Concatenate ------------------------------------------------------------
+ifeq ($(call IS_RULE, __concat),)
+
+__concat: $(DISTDIR)/$(OUTPUT)
+# Contenate all files together
+$(DISTDIR)/$(OUTPUT): $(SRCS)
+	$(call MKDIR, `dirname "$(DISTDIR)/$(OUTPUT)"`/)
+	$(call CONCAT, $^, "$(DISTDIR)/$(OUTPUT)")
+	$(call MAKE_NEXT, OUTPUT="$(DISTDIR)/$(OUTPUT)")
+
+endif
+
 # ---- Copy -------------------------------------------------------------------
-ifeq ($(call IS_RULE, __copy __copy-stamp),)
+ifeq ($(call IS_RULE, __copy),)
 
 ifeq ($(words $(SRCS)),1)
-# Note target ensures that only 1 src and 1 dst are specified
+# Note: this target ensures that only 1 src and 1 dst are specified
 DST := $(abspath $(patsubst %, $(DISTDIR)/$(OUTPUT)/%, $(notdir %$(patsubst %/,%,$(abspath $(SRCS))))))
 __copy: $(DST)
-__copy-stamp: $(DST)
 $(DST):
 	$(call CHECK_DEFINED, SRCS)
 	$(call MKDIR, "$(DISTDIR)/$(OUTPUT)")
 	$(call COPY, $(SRCS), $(DST))
-ifeq ($(call IS_RULE, __copy-stamp),)
 	@find $(SRCS) -type f > /dev/null
-	@$(foreach file, $(shell find $(SRCS) -type f), $(call MAKE_RUN, __stamp, OUTPUT="$(file)") && ) true
+	$(foreach file, $(shell find $(SRCS) -type f), $(call MAKE_NEXT, OUTPUT="$(file)") && ) true
 # Hack to ensure that the find command is not executed before the copy (due to parallelism)
-endif
 else
 __copy:
 	$(call ERROR, This target \"$@\" supports only 1 source at a time)
