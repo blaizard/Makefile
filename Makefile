@@ -48,14 +48,14 @@ COPY_FLAGS ?= -R
 PACK_FLAGS ?= -o -r
 
 # Available colors
-COLOR_END := "\033[0m"
-COLOR_RED := "\033[0;31m"
-COLOR_YELLOW := "\033[0;33m"
-COLOR_GREEN := "\033[0;32m"
-COLOR_BLUE := "\033[0;34m"
-COLOR_ORANGE := "\033[0;33m"
-COLOR_DARK_GRAY := "\033[1;30m"
-COLOR_CYAN := "\033[0;36m"
+COLOR_END := $(shell printf "\033[0m")
+COLOR_RED := $(shell printf "\033[0;31m")
+COLOR_YELLOW := $(shell printf "\033[0;33m")
+COLOR_GREEN := $(shell printf "\033[0;32m")
+COLOR_BLUE := $(shell printf "\033[0;34m")
+COLOR_ORANGE := $(shell printf "\033[0;33m")
+COLOR_DARK_GRAY := $(shell printf "\033[1;30m")
+COLOR_CYAN := $(shell printf "\033[0;36m")
 
 # Command update helpers
 PRINT_V0 = @:
@@ -71,11 +71,11 @@ COMMA := ,
 # Useful commands
 define MINIFY_JS
 $(call MSG,MINJS,GREEN,$2);
-$(AT)$(MINIFY_JS_CMD) $(MINIFY_JS_FLAGS) $1 -o $2;
+$(AT)$(MINIFY_JS_CMD) $(MINIFY_JS_FLAGS) $1 -o $2 2>&1 | $(call PIPE_FORMAT);
 endef
 define MINIFY_CSS
 $(call MSG,MINCSS,GREEN,$2);
-$(AT)$(MINIFY_CSS_CMD) $(MINIFY_CSS_FLAGS) $1 > $2;
+$(AT)$(MINIFY_CSS_CMD) $(MINIFY_CSS_FLAGS) $1 > $2 2>&1 | $(call PIPE_FORMAT);
 endef
 define CONCAT
 $(call MSG,CONCAT,GREEN,$2);
@@ -151,21 +151,28 @@ MSG_TRUNCATE_V0 =
 MSG_TRUNCATE_V1 = $(if $(shell test 80 -gt $(shell printf "%s" "$3" | wc -m) && echo 1),$3,$(shell printf "%s" "$3" | cut -c 1-80)...)
 MSG_TRUNCATE_V2 = $3
 MSG_TRUNCATE = $(strip $(MSG_TRUNCATE_V$(VERBOSE)))
+define MSG_ONLY
+"$(COLOR_END)$(COLOR_$2)$1$(COLOR_END)\t\t$(if $(value 4),$3,$(MSG_TRUNCATE))\n"
+endef
 define MSG
-$(PRINT) $(COLOR_END)$(COLOR_$2)$1$(COLOR_END)"\t\t$(if $(value 4),$3,$(MSG_TRUNCATE))\n"
+$(PRINT) $(call MSG_ONLY,$1,$2,$3,$4)
 endef
 # Print an error message and exit
 # Params:
 #   1. Error message to print.
 define ERROR
-$(call MSG,ERROR,RED,"$(COLOR_RED)"$(strip $1)$(COMMA) abort."$(COLOR_END)",1)
+$(call MSG,ERROR,RED,$(COLOR_RED)$(strip $1)$(COMMA) abort.$(COLOR_END),1)
 @exit 1
 endef
 # Print a warning message
 # Params:
 #   1. Warning message to print.
 define WARNING
-$(call MSG,WARNING,YELLOW,"$(COLOR_YELLOW)"$(strip $1)"$(COLOR_END)",1)
+$(call MSG,WARNING,YELLOW,$(COLOR_YELLOW)$(strip $1)$(COLOR_END),1)
+endef
+# Added to a pipe, it will detect errors and warning and reformat the output
+define PIPE_FORMAT
+sed 's/^.*\(WARN\|WARNING\).*/$(COLOR_YELLOW)WARNING\t\t\0$(COLOR_END)/' | sed 's/^.*\(ERROR\).*/$(COLOR_RED)ERROR\t\t\0$(COLOR_END)/'
 endef
 
 # ---- General targets --------------------------------------------------------
@@ -255,9 +262,9 @@ release: check_pack
 
 # ---- Automatic targets -----------------------------------------------------
 process%: check_srcs check_output
-	$(call MAKE_NEXT, SRCS="$(SRCS)" OUTPUT="$(OUTPUT)")
+	@$(call MAKE_NEXT, SRCS="$(SRCS)" OUTPUT="$(OUTPUT)")
 concat%: check_srcs check_output
-	$(call MAKE_NEXT, SRCS="$(SRCS)" OUTPUT="$(OUTPUT)")
+	@$(call MAKE_NEXT, SRCS="$(SRCS)" OUTPUT="$(OUTPUT)")
 copy%: check_srcs
 	@$(foreach src, $(SRCS), $(call MAKE_NEXT, SRCS="$(src)" OUTPUT="$(OUTPUT)") && ) true
 
@@ -269,7 +276,7 @@ ifeq ($(words $(OUTPUT)),1)
 ifeq ($(filter-out %.js %.css,$(OUTPUT)),)
 __stamp: check_output
 	$(call STAMP,$(OUTPUT),/* $(STAMP_TXT) */)
-	$(call MAKE_NEXT, OUTPUT="$(OUTPUT)")
+	@$(call MAKE_NEXT, OUTPUT="$(OUTPUT)")
 else
 __stamp:
 	$(call WARNING, The filetype \"$(suffix $(OUTPUT))\" of \"$(OUTPUT)\" is not supported for stamping)
@@ -290,7 +297,7 @@ __process: $(DISTDIR)/$(OUTPUT)
 # Contenate all the files together
 ifeq ($(filter-out %.js %.css,$(OUTPUT)),)
 $(DISTDIR)/$(OUTPUT): $(foreach file, $(filter %.js %.css,$(SRCS)), $(BUILDDIR)/$(basename $(file)).min$(suffix $(file)))
-	$(call MAKE_NEXT_EXPLICIT, __concat, SRCS="$^" OUTPUT="$(OUTPUT)")
+	@$(call MAKE_NEXT_EXPLICIT, __concat, SRCS="$^" OUTPUT="$(OUTPUT)")
 else
 $(DISTDIR)/$(OUTPUT):
 	$(call ERROR, File type \"$(suffix $(OUTPUT))\" not supported for rule process)
@@ -315,7 +322,7 @@ __concat: $(DISTDIR)/$(OUTPUT)
 $(DISTDIR)/$(OUTPUT): $(SRCS)
 	$(call MKDIR, `dirname "$(DISTDIR)/$(OUTPUT)"`/)
 	$(call CONCAT, $^, "$(DISTDIR)/$(OUTPUT)")
-	$(call MAKE_NEXT, OUTPUT="$(DISTDIR)/$(OUTPUT)")
+	@$(call MAKE_NEXT, OUTPUT="$(DISTDIR)/$(OUTPUT)")
 
 endif
 
@@ -331,7 +338,7 @@ $(DST):
 	$(call MKDIR, "$(DISTDIR)/$(OUTPUT)")
 	$(call COPY, $(SRCS), $(DST))
 	@find $(SRCS) -type f > /dev/null
-	$(foreach file, $(shell find $(SRCS) -type f), $(call MAKE_NEXT, OUTPUT="$(file)") && ) true
+	@$(foreach file, $(shell find $(SRCS) -type f), $(call MAKE_NEXT, OUTPUT="$(file)") && ) true
 # Hack to ensure that the find command is not executed before the copy (due to parallelism)
 else
 __copy:
