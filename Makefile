@@ -26,9 +26,10 @@ endif
 PACKAGE ?= package.zip
 STAMP_TXT ?= $(OUTPUT) (`date +'%Y.%m.%d'`)
 VERBOSE ?= 1
+COMPACT_MODE ?= 1
 BUILDDIR ?= .make
 DISTDIR ?= dist
-SRCS ?= 
+INPUT ?= 
 OUTPUT ?= 
 
 # Commands
@@ -40,6 +41,7 @@ MKDIR_CMD := mkdir
 RMDIR_CMD := rm
 COPY_CMD := cp
 PACK_CMD := zip
+CD_CMD := cd
 
 # Flags
 PRINT_FLAGS ?=
@@ -50,6 +52,7 @@ MKDIR_FLAGS ?= -p
 RMDIR_FLAGS ?= -rfd
 COPY_FLAGS ?= -R
 PACK_FLAGS ?= -o -r
+CD_FLAGS :=
 
 # Available colors
 COLOR_END := $(shell printf "\033[0m")
@@ -60,47 +63,51 @@ COLOR_BLUE := $(shell printf "\033[0;34m")
 COLOR_ORANGE := $(shell printf "\033[0;33m")
 COLOR_DARK_GRAY := $(shell printf "\033[1;30m")
 COLOR_CYAN := $(shell printf "\033[0;36m")
+COLOR_LIGHT_BLUE := $(shell printf "\033[0;94m")
 
 # Command update helpers
-PRINT_V0 = @:
-PRINT_V1 = @$(PRINT_CMD) $(PRINT_FLAGS)
-PRINT_V2 = $(PRINT_V1)
+PRINT_V0 := :
+PRINT_V1 := $(PRINT_CMD) $(PRINT_FLAGS)
+PRINT_V2 := $(PRINT_V1)
 PRINT = $(PRINT_V$(VERBOSE))
 AT_V0 := @
 AT_V1 := @
 AT_V2 :=  
 AT = $(AT_V$(VERBOSE))
 COMMA := ,
+PWD := $(shell pwd)
+CLEAR_LINE := $(shell printf "\r\033[K")
+OUTPUT_LIST :=
 
 # Useful commands
 define MINIFY_JS
-$(call MSG,MINJS,GREEN,$2);
+@$(call MSG,MINJS,GREEN,$2);
 $(AT)$(MINIFY_JS_CMD) $(MINIFY_JS_FLAGS) $1 -o $2 2>&1 | $(call PIPE_FORMAT)
 endef
 define MINIFY_CSS
-$(call MSG,MINCSS,GREEN,$2);
+@$(call MSG,MINCSS,GREEN,$2);
 $(AT)$(MINIFY_CSS_CMD) $(MINIFY_CSS_FLAGS) $1 > $2 2>&1 | $(call PIPE_FORMAT)
 endef
 define CONCAT
-$(call MSG,CONCAT,GREEN,$2);
+@$(call MSG,CONCAT,GREEN,$2);
 $(AT)$(CONCAT_CMD) $(CONCAT_FLAGS) $1 > $2
 endef
 define MKDIR
-$(if $(shell test -d $1 && echo 1),,$(call MSG,MKDIR,CYAN,$1);$(MKDIR_CMD) $(MKDIR_FLAGS) $1)
+$(if $(shell test -d $1 && echo 1),,@$(call MSG,MKDIR,CYAN,$1);$(MKDIR_CMD) $(MKDIR_FLAGS) $1)
 endef
 define RMDIR
-$(if $(shell test -d $1 && echo 1),$(call MSG,RMDIR,CYAN,$1);$(RMDIR_CMD) $(RMDIR_FLAGS) $1,)
+$(if $(shell test -d $1 && echo 1),@$(call MSG,RMDIR,CYAN,$1);$(RMDIR_CMD) $(RMDIR_FLAGS) $1,)
 endef
 define COPY
-$(call MSG,COPY,CYAN,$1);
+@$(call MSG,COPY,CYAN,$1);
 $(AT)$(COPY_CMD) $(COPY_FLAGS) $1 $2
 endef
 define PACK
-$(call MSG,PACK,CYAN,$2);
-$(AT)$(PACK_CMD) $(PACK_FLAGS) $2 $1 >/dev/null
+@$(call MSG,PACK,CYAN,$2);
+$(AT)$(CD_CMD) $(CD_FLAGS) "$1" && $(PACK_CMD) $(PACK_FLAGS) $(PWD)/$2 * >/dev/null
 endef
 define STAMP
-$(call MSG,STAMP,GREEN,$1);
+@$(call MSG,STAMP,GREEN,$1);
 $(AT)echo "$(strip $2)" > .temp && cat $1 >> .temp && mv .temp $1
 endef
 # Make calls
@@ -108,7 +115,7 @@ define MAKE_RUN
 $(MAKE) --no-print-directory $2 $1
 endef
 define MAKE_NEXT
-$(if $(RULES),$(call MAKE_RUN, __$(firstword $(RULES)), RULES="$(wordlist 2, 10, $(RULES))" $1),)
+$(if $(RULES),$(call MAKE_RUN, __$(firstword $(RULES)), RULES="$(wordlist 2, 10, $(RULES))" $1),:)
 endef
 define MAKE_NEXT_EXPLICIT
 $(call MAKE_RUN, $1, RULES="$(RULES)" $2)
@@ -134,7 +141,7 @@ __CHECK_DEFINED = \
 #   1. Tool name
 #   2. Message if not present
 define CHECK_TOOL
-$(if $(shell command -v $1 2>/dev/null),$(call MSG,CHECK,CYAN,$1),$(call ERROR,$2))
+@$(if $(shell command -v $1 2>/dev/null),$(call MSG,CHECK,CYAN,$1),$(call ERROR,$2))
 endef
 # Checks if a file exists
 # Params:
@@ -142,8 +149,8 @@ endef
 #   2. Message
 #   3. (optional) Action to perform if it does not exists
 define CHECK_FILE
-$(if $(shell test -s $1 && echo 1),,$(shell $(if $(value 3),$3)))
-$(if $(shell test -s $1 && echo 1),$(call MSG,CHECK,CYAN,$1),$(call ERROR,$2))
+@$(if $(shell test -s $1 && echo 1),,$(shell $(if $(value 3),$3)))
+@$(if $(shell test -s $1 && echo 1),$(call MSG,CHECK,CYAN,$1),$(call ERROR,$2))
 endef
 # Print a formated message
 # Params:
@@ -151,32 +158,37 @@ endef
 #   2. Color (any available colors from COLOR_*)
 #   3. Message
 #   4. (optional) If set, the message will not be trunc
-MSG_TRUNCATE_V0 =
+MSG_TRUNCATE_V0 = $(MSG_TRUNCATE_V1)
 MSG_TRUNCATE_V1 = $(if $(shell test 80 -gt $(shell printf "%s" "$3" | wc -m) && echo 1),$3,$(shell printf "%s" "$3" | cut -c 1-80)...)
 MSG_TRUNCATE_V2 = $3
 MSG_TRUNCATE = $(strip $(MSG_TRUNCATE_V$(VERBOSE)))
 define MSG_ONLY
-"$(COLOR_END)$(COLOR_$2)$1$(COLOR_END)\t\t$(if $(value 4),$3,$(MSG_TRUNCATE))\n"
+"$(COLOR_END)$(COLOR_$2)$1$(COLOR_END)\t\t$(if $(value 4),$3,$(MSG_TRUNCATE))"
 endef
 define MSG
-$(PRINT) $(call MSG_ONLY,$1,$2,$3,$4)
+$(PRINT) "$(if $(COMPACT_MODE),$(CLEAR_LINE),)"$(call MSG_ONLY,$1,$2,$3,$4)"$(if $(COMPACT_MODE),,\n)"
+endef
+define MSG_ALWAYS
+$(PRINT) $(call MSG_ONLY,$1,$2,$3,$4)"\n"
 endef
 # Print an error message and exit
 # Params:
 #   1. Error message to print.
 define ERROR
-$(call MSG,ERROR,RED,$(COLOR_RED)$(strip $1)$(COMMA) abort.$(COLOR_END),1)
+$(call MSG_ALWAYS,$(if $(COMPACT_MODE),\n,)ERROR,RED,$(COLOR_RED)$(strip $1)$(COMMA) abort.$(COLOR_END),1)
 @exit 1
 endef
 # Print a warning message
 # Params:
 #   1. Warning message to print.
 define WARNING
-$(call MSG,WARNING,YELLOW,$(COLOR_YELLOW)$(strip $1)$(COLOR_END),1)
+$(call MSG_ALWAYS,$(if $(COMPACT_MODE),\n,)WARNING,YELLOW,$(COLOR_YELLOW)$(strip $1)$(COLOR_END),1)
 endef
 # Added to a pipe, it will detect errors and warning and reformat the output
 define PIPE_FORMAT
-sed 's/^.*\(WARN\|WARNING\).*/$(COLOR_YELLOW)WARNING\t\t\0$(COLOR_END)/' | sed 's/^.*\(ERROR\).*/$(COLOR_RED)ERROR\t\t\0$(COLOR_END)/'
+sed 's/^.*\(WARN\).*/$(COLOR_YELLOW)WARNING\t\t\0$(COLOR_END)/i' \
+| sed 's/^\(.*ERROR\|.*EXPECTED\|[ \t]\+at\).*/$(COLOR_RED)ERROR\t\t\0$(COLOR_END)/i' \
+| xargs -0 -I{} printf "$(if $(COMPACT_MODE),\n,){}"
 endef
 
 # ---- General targets --------------------------------------------------------
@@ -187,13 +199,16 @@ unexport RULES
 
 # Predefined rules
 all: $(BUILDDIR)/Makefile | $(ALL_RULES) mute-if-nop
+	@printf "$(if $(COMPACT_MODE),$(CLEAR_LINE),)"
+	@$(foreach output, $(OUTPUT_LIST), $(call MSG_ALWAYS,INFO,LIGHT_BLUE, \
+		$(output): $(shell du -bh $(DISTDIR)/$(output) | awk '{print $$1}')) && ) true
 build: all
 silent: VERBOSE := 0
 silent: all
 verbose: VERBOSE := 2
 verbose: all
 mute-if-nop:
-	@printf ""
+	@:
 
 # Trigger a clean if the makefiles have been altered
 $(BUILDDIR)/Makefile: $(ALL_MAKEFILES) | check_config
@@ -228,10 +243,10 @@ help:
 	@printf "Configuration: config.mk\n"
 	@printf "\tContains all user rules definitions. They use pre-made\n"
 	@printf "\trules with the following options:\n"
-	@printf "\tSRCS\t\tContains the sources files for the specific rule.\n"
+	@printf "\tINPUT\t\tContains the input files for the specific rule.\n"
 	@printf "\tOUTPUT\t\tThe name of the output file (if relevant).\n"
 	@printf "Example:\n"
-	@printf "\tprocess_main: SRCS := hello.js\n"
+	@printf "\tprocess_main: INPUT := hello.js\n"
 	@printf "\tprocess_main: OUTPUT := hello.min.js\n"
 
 # Check that all prerequired conditions are there
@@ -249,8 +264,8 @@ check_minify_css:
 # Check if the packaging tools are present
 check_pack:
 	$(call CHECK_TOOL, $(PACK_CMD), "")
-check_srcs:
-	$(call CHECK_DEFINED, SRCS)
+check_input:
+	$(call CHECK_DEFINED, INPUT)
 check_output:
 	$(call CHECK_DEFINED, OUTPUT)
 # Clean-up the created directoried
@@ -267,16 +282,17 @@ rebuild:
 release: check_pack | mute-if-nop
 	$(call RMDIR,$(DISTDIR)/)
 	@$(call MAKE_RUN, build)
-	$(call MKDIR, `dirname "$(DISTDIR)/$(PACKAGE)"`/)
-	$(call PACK,$(DISTDIR)/*,$(DISTDIR)/$(PACKAGE))
+	$(call PACK,$(DISTDIR),$(DISTDIR)/$(PACKAGE))
+	@printf "$(if $(COMPACT_MODE),$(CLEAR_LINE),)"
 
 # ---- Automatic targets -----------------------------------------------------
-process%: check_srcs check_output
-	@$(call MAKE_NEXT, SRCS="$(SRCS)" OUTPUT="$(OUTPUT)")
-concat%: check_srcs check_output
-	@$(call MAKE_NEXT, SRCS="$(SRCS)" OUTPUT="$(OUTPUT)")
-copy%: check_srcs
-	@$(foreach src, $(SRCS), $(call MAKE_NEXT, SRCS="$(src)" OUTPUT="$(OUTPUT)") && ) true
+process%: check_input check_output
+	@$(call MAKE_NEXT, INPUT="$(INPUT)" OUTPUT="$(OUTPUT)")
+	@$(eval OUTPUT_LIST += "$(OUTPUT)")
+concat%: check_input check_output
+	@$(call MAKE_NEXT, INPUT="$(INPUT)" OUTPUT="$(OUTPUT)")
+copy%: check_input
+	@$(foreach file, $(INPUT), $(call MAKE_NEXT, INPUT="$(file)" OUTPUT="$(OUTPUT)") && ) true
 
 # ---- Stamp ------------------------------------------------------------------
 ifeq ($(call IS_RULE, __stamp),)
@@ -289,12 +305,12 @@ __stamp: check_output | mute-if-nop
 	@$(call MAKE_NEXT, OUTPUT="$(OUTPUT)")
 else
 __stamp:
-	$(call WARNING, The filetype \"$(suffix $(OUTPUT))\" of \"$(OUTPUT)\" is not supported for stamping)
+	@$(call WARNING, The filetype \"$(suffix $(OUTPUT))\" of \"$(OUTPUT)\" is not supported for stamping)
 # Unsupported supported file extensions are ignored
 endif
 else
 __stamp:
-	$(call ERROR, This target \"$@\" supports only 1 output at a time)
+	@$(call ERROR, This target \"$@\" supports only 1 output at a time)
 endif
 
 endif
@@ -305,10 +321,10 @@ ifeq ($(call IS_RULE, __process),)
 __process: $(DISTDIR)/$(OUTPUT) | mute-if-nop
 
 # ---- Process - Javascript & CSS
-ifeq ($(filter-out %.js %.css,$(SRCS)),)
+ifeq ($(filter-out %.js %.css,$(INPUT)),)
 
-$(DISTDIR)/$(OUTPUT): $(foreach file, $(filter %.js %.css,$(SRCS)), $(BUILDDIR)/$(basename $(file)).min$(suffix $(file)))
-	@$(call MAKE_NEXT_EXPLICIT, __concat, SRCS="$^" OUTPUT="$(OUTPUT)")
+$(DISTDIR)/$(OUTPUT): $(foreach file, $(filter %.js %.css,$(INPUT)), $(BUILDDIR)/$(basename $(file)).min$(suffix $(file)))
+	@$(call MAKE_NEXT_EXPLICIT, __concat, INPUT="$^" OUTPUT="$(OUTPUT)")
 # js files
 $(BUILDDIR)/%.min.js: check_minify_js %.js
 	$(call MKDIR, `dirname $@`/)
@@ -320,7 +336,7 @@ $(BUILDDIR)/%.min.css: check_minify_css %.css
 
 else
 $(DISTDIR)/$(OUTPUT):
-	$(call ERROR, File type \"$(firstword $(suffix $(SRCS)))\" not supported for rule processing)
+	@$(call ERROR, File type \"$(firstword $(suffix $(INPUT)))\" not supported for rule processing)
 endif
 
 endif
@@ -330,7 +346,7 @@ ifeq ($(call IS_RULE, __concat),)
 
 __concat: $(DISTDIR)/$(OUTPUT) | mute-if-nop
 # Contenate all files together
-$(DISTDIR)/$(OUTPUT): $(SRCS)
+$(DISTDIR)/$(OUTPUT): $(INPUT)
 	$(call MKDIR, `dirname "$(DISTDIR)/$(OUTPUT)"`/)
 	$(call CONCAT, $^, "$(DISTDIR)/$(OUTPUT)")
 	@$(call MAKE_NEXT, OUTPUT="$(DISTDIR)/$(OUTPUT)")
@@ -340,20 +356,21 @@ endif
 # ---- Copy -------------------------------------------------------------------
 ifeq ($(call IS_RULE, __copy),)
 
-ifeq ($(words $(SRCS)),1)
+ifeq ($(words $(INPUT)),1)
 # Note: this target ensures that only 1 src and 1 dst are specified
-DIR_OUTPUT = $(abspath $(patsubst %, $(DISTDIR)/$(OUTPUT)/%, $(notdir %$(patsubst %/,%,$(abspath $(SRCS))))))
-FILES_OUTPUT=$(patsubst %, $(DIR_OUTPUT)/%, $(notdir $(shell find $(SRCS) -type f)))
-__copy: $(DIR_OUTPUT) | mute-if-nop
-$(DIR_OUTPUT):
-	$(call CHECK_DEFINED, SRCS)
+DIR_OUTPUT = $(DISTDIR)/$(if $(OUTPUT),$(OUTPUT)/,)$(notdir $(patsubst %/,%,$(abspath $(INPUT)))$(if $(wildcard $(INPUT)/.*),,/))$(if $(wildcard $(INPUT)/.*),/,)
+FILE_OUTPUT = $(DIR_OUTPUT)$(if $(wildcard $(INPUT)/.*),,$(notdir $(INPUT)))
+FILES_OUTPUT = $(patsubst %, $(DIR_OUTPUT)%, $(notdir $(shell find $(INPUT) -type f)))
+__copy: $(FILE_OUTPUT) | mute-if-nop
+$(FILE_OUTPUT):
+	$(call CHECK_DEFINED, INPUT)
 	$(call MKDIR, "$(DISTDIR)/$(OUTPUT)")
-	$(call COPY, $(SRCS), $(DIR_OUTPUT))
+	$(call COPY, $(INPUT), $(DIR_OUTPUT))
 	@$(foreach file, $(FILES_OUTPUT), $(call MAKE_NEXT, OUTPUT="$(file)") && ) true
 # Hack to ensure that the find command is not executed before the copy (due to parallelism)
 else
 __copy:
-	$(call ERROR, This target \"$@\" supports only 1 source at a time)
+	@$(call ERROR, This target \"$@\" supports only 1 input at a time)
 endif
 
 endif
