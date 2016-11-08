@@ -42,6 +42,7 @@ RMDIR_CMD := rm
 COPY_CMD := cp
 PACK_CMD := zip
 CD_CMD := cd
+WGET_CMD := wget
 
 # Flags
 PRINT_FLAGS ?=
@@ -53,6 +54,7 @@ RMDIR_FLAGS ?= -rfd
 COPY_FLAGS ?= -R
 PACK_FLAGS ?= -o -r
 CD_FLAGS :=
+WGET_FLAGS := --no-check-certificate -q
 
 # Available colors
 COLOR_END := $(shell printf "\033[0m")
@@ -110,6 +112,14 @@ define STAMP
 @$(call MSG,STAMP,GREEN,$1);
 $(AT)echo "$(strip $2)" > .temp && cat $1 >> .temp && mv .temp $1
 endef
+# Fetch the latest Makefile
+# $1 - Output
+define FETCH_UPDATE
+@$(call MSG,FETCH,GREEN,Makefile)
+$(AT)$(WGET_CMD) $(WGET_FLAGS) -O "$1" https://www.blaizard.com/projects/Makefile/git/Makefile || \
+$(call ERROR,Cannot fetch latest Makefile, please check your connection.) | :
+endef
+
 # Make calls
 define MAKE_RUN
 $(MAKE) --no-print-directory $2 $1
@@ -170,7 +180,7 @@ define MSG
 $(PRINT) "$(if $(COMPACT_MODE),$(CLEAR_LINE),)"$(call MSG_ONLY,$1,$2,$3,$4)"$(if $(COMPACT_MODE),,\n)"
 endef
 define MSG_ALWAYS
-$(PRINT) $(call MSG_ONLY,$1,$2,$3,$4)"\n"
+$(PRINT) "$(if $(COMPACT_MODE),$(CLEAR_LINE),)"$(call MSG_ONLY,$1,$2,$3,$4)"\n"
 endef
 # Print an error message and exit
 # Params:
@@ -185,16 +195,18 @@ endef
 define WARNING
 $(call MSG_ALWAYS,$(if $(COMPACT_MODE),\n,)WARNING,YELLOW,$(COLOR_YELLOW)$(strip $1)$(COLOR_END),1)
 endef
+# Info messages
+# Params:
+#   1. The information message
+define INFO
+$(call MSG_ALWAYS,INFO,LIGHT_BLUE,$1)
+endef
 # Added to a pipe, it will detect errors and warning and reformat the output
 define PIPE_FORMAT
 sed 's/^.*\(WARN\).*/$(COLOR_YELLOW)WARNING\t\t\0$(COLOR_END)/i' \
 | sed 's/^\(.*ERROR\|.*EXPECTED\|[ \t]\+at\).*/$(COLOR_RED)ERROR\t\t\0$(COLOR_END)/i' \
 | xargs -0 -I{} printf "$(if $(COMPACT_MODE),\n,){}"
 endef
-
-# ---- Basic checks -----------------------------------------------------------
-
-#ifeq ()
 
 # ---- General targets --------------------------------------------------------
 
@@ -205,13 +217,21 @@ unexport RULES
 # Predefined rules
 all: $(BUILDDIR)/Makefile | $(ALL_RULES) mute-if-nop
 	@printf "$(if $(COMPACT_MODE),$(CLEAR_LINE),)"
-	@$(foreach output, $(OUTPUT_LIST), $(call MSG_ALWAYS,INFO,LIGHT_BLUE, \
+	@$(foreach output, $(OUTPUT_LIST), $(call INFO, \
 		$(output): $(shell du -bh $(DISTDIR)/$(output) | awk '{print $$1}')) && ) true
 build: all
 silent: VERBOSE := 0
 silent: all
 verbose: VERBOSE := 2
 verbose: all
+update:
+	$(call MKDIR, $(BUILDDIR)/)
+	$(call FETCH_UPDATE,$(BUILDDIR)/Makefile)
+	@cmp --silent Makefile $(BUILDDIR)/Makefile || \
+	$(call INFO,Saving current Makefile to Makefile.old) && \
+	cp Makefile Makefile.old && $(call INFO,Updating new Makefile) && \
+	mv $(BUILDDIR)/Makefile Makefile && exit
+	$(call INFO,Makefile is already up-to-date)
 mute-if-nop:
 	@:
 

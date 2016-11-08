@@ -96,6 +96,10 @@ Build the targets and generate the package
 ```bash 
 make release
 ```
+Automatically check and update your Makefile with the latest version on the server
+```bash 
+make update
+```
 Show the help message
 ```bash 
 make help
@@ -136,4 +140,4 @@ COMPACT_MODE :=
 ```
 
 <a name="generic">(1)</a> Can be used with varous development language.<br/>
-<a name="separated-config">(2)</a> Why is this a feature? It allows an easy migration path to apply updates to this Makefile.<br/>
+<a name="separated-config">(2)</a> Allows an easy migration path to apply updates to this Makefile (make update).<br/>
