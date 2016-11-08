@@ -309,9 +309,9 @@ update:
 	$(call MKDIR, $(BUILDDIR)/)
 	$(call FETCH_UPDATE,$(BUILDDIR)/Makefile)
 	@cmp --silent Makefile $(BUILDDIR)/Makefile || ( \
-	$(call INFO,Makefile -> Makefile.old); \
-	cp Makefile Makefile.old; $(call INFO,Updating new Makefile); \
-	mv $(BUILDDIR)/Makefile Makefile )
+			$(call INFO,Makefile -> Makefile.old); \
+			cp Makefile Makefile.old; $(call INFO,Updating new Makefile); \
+			mv $(BUILDDIR)/Makefile Makefile )
 	@$(call INFO,Makefile is up-to-date)
 
 # ---- Automatic targets -----------------------------------------------------
