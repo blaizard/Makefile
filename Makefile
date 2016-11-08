@@ -31,7 +31,7 @@ BUILDDIR ?= .make
 DISTDIR ?= dist
 INPUT ?= 
 OUTPUT ?= 
-MAKEFILE_ADDRESS := https://github.com/blaizard/Makefile/blob/master/Makefile
+MAKEFILE_ADDRESS := https://raw.githubusercontent.com/blaizard/Makefile/master/Makefile
 
 # Commands
 PRINT_CMD := printf
