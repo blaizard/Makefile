@@ -31,7 +31,7 @@ BUILDDIR ?= .make
 DISTDIR ?= dist
 INPUT ?= 
 OUTPUT ?= 
-MAKEFILE_ADDRESS := https://github.com/blaizard/Makefile/blob/master/Makefile
+MAKEFILE_ADDRESS := https://raw.githubusercontent.com/blaizard/Makefile/master/Makefile
 
 # Commands
 PRINT_CMD := printf
@@ -308,10 +308,10 @@ release: check_pack | mute-if-nop
 update:
 	$(call MKDIR, $(BUILDDIR)/)
 	$(call FETCH_UPDATE,$(BUILDDIR)/Makefile)
-	@cmp --silent Makefile $(BUILDDIR)/Makefile || \
-	$(call INFO,Makefile -> Makefile.old) && \
-	cp Makefile Makefile.old && $(call INFO,Updating new Makefile) && \
-	mv $(BUILDDIR)/Makefile Makefile
+	@cmp --silent Makefile $(BUILDDIR)/Makefile || ( \
+	$(call INFO,Makefile -> Makefile.old); \
+	cp Makefile Makefile.old; $(call INFO,Updating new Makefile); \
+	mv $(BUILDDIR)/Makefile Makefile )
 	@$(call INFO,Makefile is up-to-date)
 
 # ---- Automatic targets -----------------------------------------------------
