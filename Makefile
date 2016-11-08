@@ -143,14 +143,15 @@ __CHECK_DEFINED = \
 define CHECK_TOOL
 @$(if $(shell command -v $1 2>/dev/null),$(call MSG,CHECK,CYAN,$1),$(call ERROR,$2))
 endef
-# Checks if a file exists
+# Checks if one or more file(s) exists
 # Params:
 #   1. File
 #   2. Message
 #   3. (optional) Action to perform if it does not exists
+FILE_NOT_EXIST=$(filter-out " ",$(strip $(foreach file,$1,$(if $(wildcard $(file)),, $(file)))))
 define CHECK_FILE
-@$(if $(shell test -s $1 && echo 1),,$(shell $(if $(value 3),$3)))
-@$(if $(shell test -s $1 && echo 1),$(call MSG,CHECK,CYAN,$1),$(call ERROR,$2))
+@$(if $(call FILE_NOT_EXIST,$1),$(shell $(if $(value 3),$3)),)
+@$(if $(call FILE_NOT_EXIST,$1),$(call ERROR,$(if $2,$2,The file(s) \"$(call FILE_NOT_EXIST,$1)\" do(es) not exist)),$(call MSG,CHECK,CYAN,$1))
 endef
 # Print a formated message
 # Params:
@@ -191,6 +192,10 @@ sed 's/^.*\(WARN\).*/$(COLOR_YELLOW)WARNING\t\t\0$(COLOR_END)/i' \
 | xargs -0 -I{} printf "$(if $(COMPACT_MODE),\n,){}"
 endef
 
+# ---- Basic checks -----------------------------------------------------------
+
+#ifeq ()
+
 # ---- General targets --------------------------------------------------------
 
 # Export variables to sub-makes
@@ -212,7 +217,7 @@ mute-if-nop:
 
 # Trigger a clean if the makefiles have been altered
 $(BUILDDIR)/Makefile: $(ALL_MAKEFILES) | check_config
-	@$(call MAKE_RUN, clean)
+	+@$(call MAKE_RUN, clean)
 	@mkdir -p $(BUILDDIR) && touch $(BUILDDIR)/Makefile
 
 # Help message
@@ -257,15 +262,16 @@ check_config:
 	$(call CHECK_DEFINED, ALL_RULES, 'config.mk' contains no rules)
 # Check if JS minify tools are present
 check_minify_js:
-	$(call CHECK_TOOL, $(MINIFY_JS_CMD), "Please install: sudo apt-get install npm && sudo npm install --global uglifyjs && uglifyjs --version")
+	$(call CHECK_TOOL, $(MINIFY_JS_CMD),Please install: npm and uglifyjs packages)
 # Check if CSS minify tools are present
 check_minify_css:
-	$(call CHECK_TOOL, $(MINIFY_CSS_CMD), "Please install: sudo apt-get install npm && sudo npm install --global uglifycss && uglifycss --version")
+	$(call CHECK_TOOL, $(MINIFY_CSS_CMD),Please install: npm and uglifycss packages)
 # Check if the packaging tools are present
 check_pack:
 	$(call CHECK_TOOL, $(PACK_CMD), "")
 check_input:
 	$(call CHECK_DEFINED, INPUT)
+	$(call CHECK_FILE, $(INPUT))
 check_output:
 	$(call CHECK_DEFINED, OUTPUT)
 # Clean-up the created directoried
@@ -275,24 +281,24 @@ clean: | mute-if-nop
 
 # Clean and re-build the targets
 rebuild:
-	@$(call MAKE_RUN, clean)
-	@$(call MAKE_RUN, build)
+	+@$(call MAKE_RUN, clean)
+	+@$(call MAKE_RUN, build)
 
 # Re-build all what is inside the dist directory and make a package of it all
 release: check_pack | mute-if-nop
 	$(call RMDIR,$(DISTDIR)/)
-	@$(call MAKE_RUN, build)
+	+@$(call MAKE_RUN, build)
 	$(call PACK,$(DISTDIR),$(DISTDIR)/$(PACKAGE))
 	@printf "$(if $(COMPACT_MODE),$(CLEAR_LINE),)"
 
 # ---- Automatic targets -----------------------------------------------------
 process%: check_input check_output
-	@$(call MAKE_NEXT, INPUT="$(INPUT)" OUTPUT="$(OUTPUT)")
+	+@$(call MAKE_NEXT, INPUT="$(INPUT)" OUTPUT="$(OUTPUT)")
 	@$(eval OUTPUT_LIST += "$(OUTPUT)")
 concat%: check_input check_output
-	@$(call MAKE_NEXT, INPUT="$(INPUT)" OUTPUT="$(OUTPUT)")
+	+@$(call MAKE_NEXT, INPUT="$(INPUT)" OUTPUT="$(OUTPUT)")
 copy%: check_input
-	@$(foreach file, $(INPUT), $(call MAKE_NEXT, INPUT="$(file)" OUTPUT="$(OUTPUT)") && ) true
+	+@$(foreach file, $(INPUT), $(call MAKE_NEXT, INPUT="$(file)" OUTPUT="$(OUTPUT)") && ) true
 
 # ---- Stamp ------------------------------------------------------------------
 ifeq ($(call IS_RULE, __stamp),)
@@ -302,7 +308,7 @@ ifeq ($(words $(OUTPUT)),1)
 ifeq ($(filter-out %.js %.css,$(OUTPUT)),)
 __stamp: check_output | mute-if-nop
 	$(call STAMP,$(OUTPUT),/* $(STAMP_TXT) */)
-	@$(call MAKE_NEXT, OUTPUT="$(OUTPUT)")
+	+@$(call MAKE_NEXT, OUTPUT="$(OUTPUT)")
 else
 __stamp:
 	@$(call WARNING, The filetype \"$(suffix $(OUTPUT))\" of \"$(OUTPUT)\" is not supported for stamping)
@@ -324,7 +330,7 @@ __process: $(DISTDIR)/$(OUTPUT) | mute-if-nop
 ifeq ($(filter-out %.js %.css,$(INPUT)),)
 
 $(DISTDIR)/$(OUTPUT): $(foreach file, $(filter %.js %.css,$(INPUT)), $(BUILDDIR)/$(basename $(file)).min$(suffix $(file)))
-	@$(call MAKE_NEXT_EXPLICIT, __concat, INPUT="$^" OUTPUT="$(OUTPUT)")
+	+@$(call MAKE_NEXT_EXPLICIT, __concat, INPUT="$^" OUTPUT="$(OUTPUT)")
 # js files
 $(BUILDDIR)/%.min.js: check_minify_js %.js
 	$(call MKDIR, `dirname $@`/)
@@ -349,7 +355,7 @@ __concat: $(DISTDIR)/$(OUTPUT) | mute-if-nop
 $(DISTDIR)/$(OUTPUT): $(INPUT)
 	$(call MKDIR, `dirname "$(DISTDIR)/$(OUTPUT)"`/)
 	$(call CONCAT, $^, "$(DISTDIR)/$(OUTPUT)")
-	@$(call MAKE_NEXT, OUTPUT="$(DISTDIR)/$(OUTPUT)")
+	+@$(call MAKE_NEXT, OUTPUT="$(DISTDIR)/$(OUTPUT)")
 
 endif
 
@@ -366,7 +372,7 @@ $(FILE_OUTPUT):
 	$(call CHECK_DEFINED, INPUT)
 	$(call MKDIR, "$(DISTDIR)/$(OUTPUT)")
 	$(call COPY, $(INPUT), $(DIR_OUTPUT))
-	@$(foreach file, $(FILES_OUTPUT), $(call MAKE_NEXT, OUTPUT="$(file)") && ) true
+	+@$(foreach file, $(FILES_OUTPUT), $(call MAKE_NEXT, OUTPUT="$(file)") && ) true
 # Hack to ensure that the find command is not executed before the copy (due to parallelism)
 else
 __copy:
