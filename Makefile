@@ -31,6 +31,7 @@ BUILDDIR ?= .make
 DISTDIR ?= dist
 INPUT ?= 
 OUTPUT ?= 
+MAKEFILE_ADDRESS := https://github.com/blaizard/Makefile/blob/master/Makefile
 
 # Commands
 PRINT_CMD := printf
@@ -116,7 +117,7 @@ endef
 # $1 - Output
 define FETCH_UPDATE
 @$(call MSG,FETCH,GREEN,Makefile)
-$(AT)$(WGET_CMD) $(WGET_FLAGS) -O "$1" https://www.blaizard.com/projects/Makefile/git/Makefile || \
+$(AT)$(WGET_CMD) $(WGET_FLAGS) -O "$1" $(MAKEFILE_ADDRESS) || \
 $(call ERROR,Cannot fetch latest Makefile, please check your connection.) | :
 endef
 
@@ -224,14 +225,6 @@ silent: VERBOSE := 0
 silent: all
 verbose: VERBOSE := 2
 verbose: all
-update:
-	$(call MKDIR, $(BUILDDIR)/)
-	$(call FETCH_UPDATE,$(BUILDDIR)/Makefile)
-	@cmp --silent Makefile $(BUILDDIR)/Makefile || \
-	$(call INFO,Saving current Makefile to Makefile.old) && \
-	cp Makefile Makefile.old && $(call INFO,Updating new Makefile) && \
-	mv $(BUILDDIR)/Makefile Makefile && exit
-	$(call INFO,Makefile is already up-to-date)
 mute-if-nop:
 	@:
 
@@ -310,6 +303,16 @@ release: check_pack | mute-if-nop
 	+@$(call MAKE_RUN, build)
 	$(call PACK,$(DISTDIR),$(DISTDIR)/$(PACKAGE))
 	@printf "$(if $(COMPACT_MODE),$(CLEAR_LINE),)"
+
+# Automatically checks and update the Makefile with the latest version
+update:
+	$(call MKDIR, $(BUILDDIR)/)
+	$(call FETCH_UPDATE,$(BUILDDIR)/Makefile)
+	@cmp --silent Makefile $(BUILDDIR)/Makefile || \
+	$(call INFO,Makefile -> Makefile.old) && \
+	cp Makefile Makefile.old && $(call INFO,Updating new Makefile) && \
+	mv $(BUILDDIR)/Makefile Makefile
+	@$(call INFO,Makefile is up-to-date)
 
 # ---- Automatic targets -----------------------------------------------------
 process%: check_input check_output
