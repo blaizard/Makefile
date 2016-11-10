@@ -37,6 +37,8 @@ MAKEFILE_ADDRESS := https://raw.githubusercontent.com/blaizard/Makefile/master/M
 PRINT_CMD ?= printf
 MINIFY_JS_CMD ?= uglifyjs
 MINIFY_CSS_CMD ?= uglifycss
+SASS_CMD ?= sass
+SCSS_CMD ?= sass
 CONCAT_CMD ?= cat
 MKDIR_CMD ?= mkdir
 RMDIR_CMD ?= rm
@@ -49,6 +51,8 @@ WGET_CMD ?= wget
 PRINT_FLAGS ?=
 MINIFY_JS_FLAGS ?= --compress --mangle -v --lint
 MINIFY_CSS_FLAGS ?=
+SASS_FLAGS ?= --sourcemap=none --unix-newlines
+SCSS_FLAGS ?= --sourcemap=none --unix-newlines --scss
 CONCAT_FLAGS ?=
 MKDIR_FLAGS ?= -p
 RMDIR_FLAGS ?= -rfd
@@ -84,12 +88,20 @@ OUTPUT_LIST :=
 
 # Useful commands
 define MINIFY_JS
-@$(call MSG,MINJS,GREEN,$2);
+@$(call MSG,MINJS,GREEN,$1);
 $(AT)$(MINIFY_JS_CMD) $(MINIFY_JS_FLAGS) -o $2 $1 2>&1 | $(call PIPE_FORMAT)
 endef
 define MINIFY_CSS
-@$(call MSG,MINCSS,GREEN,$2);
+@$(call MSG,MINCSS,GREEN,$1);
 $(AT)$(MINIFY_CSS_CMD) $(MINIFY_CSS_FLAGS) $1 > $2 2>&1 | $(call PIPE_FORMAT)
+endef
+define SASS
+@$(call MSG,SASS,GREEN,$1);
+$(AT)$(SASS_CMD) $(SASS_FLAGS) $1 $2 2>&1 | $(call PIPE_FORMAT)
+endef
+define SCSS
+@$(call MSG,SCSS,GREEN,$1);
+$(AT)$(SCSS_CMD) $(SCSS_FLAGS) $1 $2 2>&1 | $(call PIPE_FORMAT)
 endef
 define CONCAT
 @$(call MSG,CONCAT,GREEN,$2);
@@ -134,10 +146,18 @@ endef
 define MAKE_NEXT_EXPLICIT
 $(call MAKE_RUN, $1, RULES="$(RULES)" $2)
 endef
-# List and decode the current rules
+# List and decode the current rules:
 RULES?=$(filter-out " ",$(strip $(subst -, ,$(firstword $(subst _, ,$@)))))
 # If a rule is present
 IS_RULE=$(if $(filter-out " ",$(strip $(foreach rule,$1,$(filter " $(rule) "," $(MAKECMDGOALS) ")))),,-1)
+# Filter and replace by pattern
+# Params:
+# 1. The pattern: %.js %.css
+# 2. The replacement: dist/%.min.js - @EXT will be replaced by the file extension
+# 3. The file list
+FILTER_PATSUBST=$(foreach file, $3, \
+	$(foreach pat, $1, $(patsubst $(pat), \
+		$(subst @EXT,$(suffix $(file)),$2), $(filter $(pat), $(file)))))
 # Check that given variables are set and all have non-empty values,
 # die with an error otherwise.
 # Params:
@@ -207,8 +227,9 @@ $(call MSG_ALWAYS,INFO,LIGHT_BLUE,$1)
 endef
 # Added to a pipe, it will detect errors and warning and reformat the output
 define PIPE_FORMAT
-sed 's/^.*\(WARN\).*/$(COLOR_YELLOW)WARNING\t\t\0$(COLOR_END)/i' \
-| sed 's/^\(.*ERROR\|.*EXPECTED\|[ \t]\+at\).*/$(COLOR_RED)ERROR\t\t\0$(COLOR_END)/i' \
+sed 's/^.*\(WARN\).*/$(COLOR_YELLOW)\0$(COLOR_END)/i' \
+| sed 's/^\(.*ERROR\|.*EXPECTED\|[ \t]\+at\).*/$(COLOR_RED)\0$(COLOR_END)/i' \
+| sed 's/.*/      \t\t\0/' \
 | xargs -0 -I{} printf "$(if $(COMPACT_MODE),\n,){}"
 endef
 
@@ -284,18 +305,17 @@ check_config:
 	$(call CHECK_DEFINED, ALL_RULES, 'config.mk' contains no rules)
 # Check if JS minify tools are present
 check_minify_js:
-	$(call CHECK_TOOL, $(MINIFY_JS_CMD),Please install: npm and uglifyjs packages)
+	$(call CHECK_TOOL, $(MINIFY_JS_CMD),Please install: uglifyjs package)
 # Check if CSS minify tools are present
 check_minify_css:
-	$(call CHECK_TOOL, $(MINIFY_CSS_CMD),Please install: npm and uglifycss packages)
+	$(call CHECK_TOOL, $(MINIFY_CSS_CMD),Please install: uglifycss package)
+# Check if SASS tool is present
+check_sass:
+	$(call CHECK_TOOL, $(SASS_CMD),Please install: sass package)
 # Check if the packaging tools are present
 check_pack:
 	$(call CHECK_TOOL, $(PACK_CMD), "")
-check_input:
-	$(call CHECK_DEFINED, INPUT)
-	$(call CHECK_FILE, $(INPUT))
-check_output:
-	$(call CHECK_DEFINED, OUTPUT)
+
 # Clean-up the created directoried
 clean: | mute-if-nop
 	$(call RMDIR,$(BUILDDIR)/)
@@ -324,12 +344,22 @@ update:
 	@$(call INFO,Makefile is up-to-date)
 
 # ---- Automatic targets -----------------------------------------------------
-process%: check_input check_output
+process%:
+	$(call CHECK_DEFINED, INPUT)
+	$(call CHECK_FILE, $(INPUT))
+	$(call CHECK_DEFINED, OUTPUT)
 	+@$(call MAKE_NEXT, INPUT="$(INPUT)" OUTPUT="$(OUTPUT)")
 	@$(eval OUTPUT_LIST += "$(OUTPUT)")
-concat%: check_input check_output
+
+concat%:
+	$(call CHECK_DEFINED, INPUT)
+	$(call CHECK_FILE, $(INPUT))
+	$(call CHECK_DEFINED, OUTPUT)
 	+@$(call MAKE_NEXT, INPUT="$(INPUT)" OUTPUT="$(OUTPUT)")
-copy%: check_input
+
+copy%:
+	$(call CHECK_DEFINED, INPUT)
+	$(call CHECK_FILE, $(INPUT))
 	+@$(foreach file, $(INPUT), $(call MAKE_NEXT, INPUT="$(file)" OUTPUT="$(OUTPUT)") && ) true
 
 # ---- Stamp ------------------------------------------------------------------
@@ -338,7 +368,9 @@ ifeq ($(call IS_RULE, __stamp),)
 ifeq ($(words $(OUTPUT)),1)
 # Note, the target ensures that only 1 output is specified
 ifeq ($(filter-out %.js %.css,$(OUTPUT)),)
-__stamp: check_output | mute-if-nop
+__stamp: | mute-if-nop
+	$(call CHECK_DEFINED, OUTPUT)
+	$(call CHECK_FILE, $(OUTPUT))
 	$(call STAMP,$(OUTPUT),/* $(STAMP_TXT) */)
 	+@$(call MAKE_NEXT, OUTPUT="$(OUTPUT)")
 else
@@ -358,10 +390,10 @@ ifeq ($(call IS_RULE, __process),)
 
 __process: $(DISTDIR)/$(OUTPUT) | mute-if-nop
 
-# ---- Process - Javascript & CSS
-ifeq ($(filter-out %.js %.css,$(INPUT)),)
+# ---- Process - Javascript & CSS & SASS
+ifeq ($(filter-out %.js %.css %.scss %.sass,$(INPUT)),)
 
-$(DISTDIR)/$(OUTPUT): $(foreach file, $(filter %.js %.css,$(INPUT)), $(BUILDDIR)/$(basename $(file)).min$(suffix $(file)))
+$(DISTDIR)/$(OUTPUT): $(call FILTER_PATSUBST, %.js %.css %.scss %.sass, $(BUILDDIR)/%.min@EXT, $(INPUT))
 	+@$(call MAKE_NEXT_EXPLICIT, __concat, INPUT="$^" OUTPUT="$(OUTPUT)")
 # js files
 $(BUILDDIR)/%.min.js: check_minify_js %.js
@@ -371,6 +403,16 @@ $(BUILDDIR)/%.min.js: check_minify_js %.js
 $(BUILDDIR)/%.min.css: check_minify_css %.css
 	$(call MKDIR, `dirname $@`/)
 	$(call MINIFY_CSS, $(lastword $^), "$@")
+# scss files
+$(BUILDDIR)/%.min.scss: check_sass %.scss
+	$(call MKDIR, `dirname $@`/)
+	$(call SCSS, $(lastword $^), "$@.css")
+	$(call MINIFY_CSS, "$@.css", "$@")
+# sass files
+$(BUILDDIR)/%.min.sass: check_sass %.sass
+	$(call MKDIR, `dirname $@`/)
+	$(call SASS, $(lastword $^), "$@.css")
+	$(call MINIFY_CSS, "$@.css", "$@")
 
 else
 $(DISTDIR)/$(OUTPUT):

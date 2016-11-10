@@ -4,6 +4,8 @@ This Makefile can generate multiple targets and support various languages. As of
 
 All the configuration takes place in a separate <code>config.mk</code> to ensure easy migration to updates of this Makefile script.
 
+&#128279; https://www.blaizard.com/projects/Makefile
+
 ## Features
 
 * Generic [(1)](#generic)
@@ -48,6 +50,7 @@ Where <code>&lt;prefix&gt;</code>, can have the following value:
  - **process** - Process the source file(s) for distribution. The receipe of the rule depends on the file type itself.
                  Here is what is currenlty supported:
   - **Javascript & CSS** (.js, .css) - Minify and concatenate all files into one.
+  - **SASS** (.scss, .sass) - Compile, minify and concatenate all files into one.
  - **copy** - Copy the file(s) or directory(ies) to the distribuatable directory.
  - **concat** - Concatenate all the input files into one.
  - **stamp** - Stamp the output (note: this rule can only be combined).
