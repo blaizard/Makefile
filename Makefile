@@ -34,16 +34,16 @@ OUTPUT ?=
 MAKEFILE_ADDRESS := https://raw.githubusercontent.com/blaizard/Makefile/master/Makefile
 
 # Commands
-PRINT_CMD := printf
-MINIFY_JS_CMD := uglifyjs
-MINIFY_CSS_CMD := uglifycss
-CONCAT_CMD := cat
-MKDIR_CMD := mkdir
-RMDIR_CMD := rm
-COPY_CMD := cp
-PACK_CMD := zip
-CD_CMD := cd
-WGET_CMD := wget
+PRINT_CMD ?= printf
+MINIFY_JS_CMD ?= uglifyjs
+MINIFY_CSS_CMD ?= uglifycss
+CONCAT_CMD ?= cat
+MKDIR_CMD ?= mkdir
+RMDIR_CMD ?= rm
+COPY_CMD ?= cp
+PACK_CMD ?= zip
+CD_CMD ?= cd
+WGET_CMD ?= wget
 
 # Flags
 PRINT_FLAGS ?=
@@ -85,7 +85,7 @@ OUTPUT_LIST :=
 # Useful commands
 define MINIFY_JS
 @$(call MSG,MINJS,GREEN,$2);
-$(AT)$(MINIFY_JS_CMD) $(MINIFY_JS_FLAGS) $1 -o $2 2>&1 | $(call PIPE_FORMAT)
+$(AT)$(MINIFY_JS_CMD) $(MINIFY_JS_FLAGS) -o $2 $1 2>&1 | $(call PIPE_FORMAT)
 endef
 define MINIFY_CSS
 @$(call MSG,MINCSS,GREEN,$2);
@@ -95,8 +95,11 @@ define CONCAT
 @$(call MSG,CONCAT,GREEN,$2);
 $(AT)$(CONCAT_CMD) $(CONCAT_FLAGS) $1 > $2
 endef
+#define MKDIR
+#$(if $(shell test -d $1 && echo 1),,@$(call MSG,MKDIR,CYAN,$1);$(MKDIR_CMD) $(MKDIR_FLAGS) $1)
+#endef
 define MKDIR
-$(if $(shell test -d $1 && echo 1),,@$(call MSG,MKDIR,CYAN,$1);$(MKDIR_CMD) $(MKDIR_FLAGS) $1)
+$(AT)[ -d $1 ] || $(call MSG,MKDIR,CYAN,$1); mkdir -p $1
 endef
 define RMDIR
 $(if $(shell test -d $1 && echo 1),@$(call MSG,RMDIR,CYAN,$1);$(RMDIR_CMD) $(RMDIR_FLAGS) $1,)
@@ -215,11 +218,15 @@ endef
 export
 unexport RULES
 
+TIME_START:=$(shell date +%s%N)
+
 # Predefined rules
 all: $(BUILDDIR)/Makefile | $(ALL_RULES) mute-if-nop
 	@printf "$(if $(COMPACT_MODE),$(CLEAR_LINE),)"
 	@$(foreach output, $(OUTPUT_LIST), $(call INFO, \
-		$(output): $(shell du -bh $(DISTDIR)/$(output) | awk '{print $$1}')) && ) true
+		$(output): $(shell du -bh $(DISTDIR)/$(output) | awk '{print $$1 "B"}')) && ) true
+	@$(call INFO,Elapsed time: $(shell time_end=`date +%s%N`; expr \( $$time_end - $(TIME_START) \) / 1000000 | awk '{print ($$1/1000)}')s)
+
 build: all
 silent: VERBOSE := 0
 silent: all
@@ -257,6 +264,8 @@ help:
 	@printf "\tbuild\t\tBuild the targets.\n"
 	@printf "\trebuild\t\tClean and re-build the targets.\n"
 	@printf "\trelease\t\tRe-build the targets and generate the package.\n"
+	@printf "\tupdate\t\tAutomatically check and update the Makefile with\n"
+	@printf "\t      \t\tthe latest version.\n"
 	@printf "\n"
 	@printf "Configuration: config.mk\n"
 	@printf "\tContains all user rules definitions. They use pre-made\n"
