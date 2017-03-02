@@ -39,12 +39,78 @@ else
 TOPLEVEL:=
 endif
 
+# ---- MINJS ------------------------------------------------------------------
+
+MINIFY_JS_CMD ?= uglifyjs
+MINIFY_JS_FLAGS ?= --compress --mangle -v --lint
+define MINIFY_JS
+@$(call MSG,MINJS,GREEN,$1);
+$(AT)$(MINIFY_JS_CMD) $(MINIFY_JS_FLAGS) -o $2 $1 2>&1 | $(call PIPE_FORMAT)
+endef
+
+# ---- MINCSS -----------------------------------------------------------------
+
+MINIFY_CSS_CMD ?= uglifycss
+MINIFY_CSS_FLAGS ?=
+define MINIFY_CSS
+@$(call MSG,MINCSS,GREEN,$1);
+$(AT)$(MINIFY_CSS_CMD) $(MINIFY_CSS_FLAGS) $1 > $2 2>&1 | $(call PIPE_FORMAT)
+endef
+
+# ---- SASS -------------------------------------------------------------------
+
+SASS_CMD ?= sass
+SASS_FLAGS ?= --sourcemap=none --unix-newlines --no-cache
+define SASS
+@$(call MSG,SASS,GREEN,$1);
+$(AT)$(SASS_CMD) $(SASS_FLAGS) $1 $2 2>&1 | $(call PIPE_FORMAT)
+endef
+
+# ---- SCSS -------------------------------------------------------------------
+
+SCSS_CMD ?= sass
+SCSS_FLAGS ?= --sourcemap=none --unix-newlines --no-cache --scss
+define SCSS
+@$(call MSG,SCSS,GREEN,$1);
+$(AT)$(SCSS_CMD) $(SCSS_FLAGS) $1 $2 2>&1 | $(call PIPE_FORMAT)
+endef
+
+# ---- C ----------------------------------------------------------------------
+
+C_CMD ?= g++
+C_FLAGS ?= -Wall -Wextra -Wfloat-equal -Wundef -Wshadow -Wpointer-arith \
+        -Wcast-align -Wstrict-prototypes -Wstrict-overflow=5 -Wwrite-strings \
+        -Waggregate-return -Wcast-qual -Wswitch-default -Wswitch-enum -Wconversion \
+        -Wunreachable-code -O3
+define C
+@$(call MSG,C,GREEN,$1)
+$(AT)$(C_CMD) $(C_FLAGS) $1 -c -o $2 2>&1 | $(call PIPE_FORMAT)
+endef
+
+# ---- CPP --------------------------------------------------------------------
+
+CPP_CMD ?= g++
+CPP_FLAGS ?= -std=c++11 -Wall -Wextra -Wfloat-equal -Wundef -Wshadow -Wpointer-arith \
+	-Wcast-align -Wstrict-overflow=5 -Wwrite-strings -Waggregate-return \
+	-Wcast-qual -Wswitch-default -Wswitch-enum -Wconversion -Wunreachable-code -O3
+define CPP
+@$(call MSG,C++,GREEN,$1)
+$(AT)$(CPP_CMD) $(CPP_FLAGS) $1 -c -o $2 2>&1 | $(call PIPE_FORMAT)
+endef
+
+# ---- LINK --------------------------------------------------------------------
+
+LINK_CMD ?= g++
+LINK_FLAGS ?= -pthread
+define LINK
+@$(call MSG,LINK,GREEN,$2);
+$(AT)$(LINK_CMD) $(LINK_FLAGS) $1 -o $2
+endef
+
+# -----------------------------------------------------------------------------
+
 # Commands
 PRINT_CMD ?= printf
-MINIFY_JS_CMD ?= uglifyjs
-MINIFY_CSS_CMD ?= uglifycss
-SASS_CMD ?= sass
-SCSS_CMD ?= sass
 CONCAT_CMD ?= cat
 MKDIR_CMD ?= mkdir
 RMDIR_CMD ?= rm
@@ -55,10 +121,6 @@ WGET_CMD ?= wget
 
 # Flags
 PRINT_FLAGS ?=
-MINIFY_JS_FLAGS ?= --compress --mangle -v --lint
-MINIFY_CSS_FLAGS ?=
-SASS_FLAGS ?= --sourcemap=none --unix-newlines --no-cache
-SCSS_FLAGS ?= --sourcemap=none --unix-newlines --no-cache --scss
 CONCAT_FLAGS ?=
 MKDIR_FLAGS ?= -p
 RMDIR_FLAGS ?= -rfd
@@ -93,22 +155,6 @@ CLEAR_LINE := $(shell printf "\r\033[K")
 OUTPUT_LIST :=
 
 # Useful commands
-define MINIFY_JS
-@$(call MSG,MINJS,GREEN,$1);
-$(AT)$(MINIFY_JS_CMD) $(MINIFY_JS_FLAGS) -o $2 $1 2>&1 | $(call PIPE_FORMAT)
-endef
-define MINIFY_CSS
-@$(call MSG,MINCSS,GREEN,$1);
-$(AT)$(MINIFY_CSS_CMD) $(MINIFY_CSS_FLAGS) $1 > $2 2>&1 | $(call PIPE_FORMAT)
-endef
-define SASS
-@$(call MSG,SASS,GREEN,$1);
-$(AT)$(SASS_CMD) $(SASS_FLAGS) $1 $2 2>&1 | $(call PIPE_FORMAT)
-endef
-define SCSS
-@$(call MSG,SCSS,GREEN,$1);
-$(AT)$(SCSS_CMD) $(SCSS_FLAGS) $1 $2 2>&1 | $(call PIPE_FORMAT)
-endef
 define CONCAT
 @$(call MSG,CONCAT,GREEN,$2);
 $(AT)$(CONCAT_CMD) $(CONCAT_FLAGS) $1 > $2
@@ -321,6 +367,12 @@ check_sass:
 # Check if the packaging tools are present
 check_pack:
 	$(call CHECK_TOOL, $(PACK_CMD), "")
+# Check if C++ tool is present
+check_cpp:
+	$(call CHECK_TOOL, $(CPP_CMD),Please install: g++ package)
+# Check if C tool is present
+check_c:
+	$(call CHECK_TOOL, $(C_CMD),Please install: gcc package)
 
 # Clean-up the created directoried
 clean: mute-if-nop
@@ -351,7 +403,7 @@ update:
 	@$(call INFO,Makefile is up-to-date)
 
 # ---- Automatic targets -----------------------------------------------------
-# These ar ethe target eferenced by ALL_RULES --------------------------------
+# These are the target referenced by ALL_RULES -------------------------------
 process%: $(BUILDDIR)/Makefile
 	$(call CHECK_DEFINED, INPUT)
 	$(call CHECK_FILE, $(INPUT))
@@ -422,10 +474,42 @@ $(BUILDDIR)/%.min.sass: check_sass %.sass
 	$(call SASS, $(lastword $^), "$@.css")
 	$(call MINIFY_CSS, "$@.css", "$@")
 
+# ---- Process - C & C++
+else
+ifeq ($(filter-out %.cpp %.cc %.c,$(INPUT)),)
+
+$(DISTDIR)/$(OUTPUT): $(call FILTER_PATSUBST, %.cpp %.cc %.c, $(BUILDDIR)/%@EXT.o, $(INPUT))
+	+@$(call MAKE_NEXT_EXPLICIT, __link, INPUT="$^" OUTPUT="$(OUTPUT)")
+
+# cpp files
+$(BUILDDIR)/%.cpp.o: check_cpp %.cpp
+	$(call MKDIR, `dirname $@`/)
+	$(call CPP, $(lastword $^), "$@")
+$(BUILDDIR)/%.cc.o: check_cpp %.cc
+	$(call MKDIR, `dirname $@`/)
+	$(call CPP, $(lastword $^), "$@")
+
+# c files
+$(BUILDDIR)/%.c.o: check_c %.c
+	$(call MKDIR, `dirname $@`/)
+	$(call C, $(lastword $^), "$@")
+
 else
 $(DISTDIR)/$(OUTPUT):
 	@$(call ERROR, File type \"$(firstword $(suffix $(INPUT)))\" not supported for rule processing)
 endif
+endif
+endif
+
+# ---- Link -------------------------------------------------------------------
+
+ifeq ($(call IS_RULE, __link),)
+
+__link: $(DISTDIR)/$(OUTPUT)
+$(DISTDIR)/$(OUTPUT): $(INPUT)
+	$(call MKDIR, `dirname "$(DISTDIR)/$(OUTPUT)"`/)
+	$(call LINK, $^, "$(DISTDIR)/$(OUTPUT)")
+	+@$(call MAKE_NEXT, OUTPUT="$(DISTDIR)/$(OUTPUT)")
 
 endif
 
